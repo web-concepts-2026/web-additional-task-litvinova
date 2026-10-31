@@ -1,4 +1,5 @@
 import socket
+import json
 
 HOST = "127.0.0.1"
 PORT = 8080
@@ -85,6 +86,34 @@ def serve_file(conn, path):
     except OSError:
         send_response(conn, "404 Not Found", "text/plain", "404 Not Found")
 
+def page(conn, query):
+    page_id = query.get("id", "unknown")
+
+    html = "<h1>Page " + page_id + "</h1>"
+    html += "<p>Query parameters:</p><ul>"
+    for key, value in query.items():
+        html += "<li>" + key + " = " + value + "</li>"
+    html += "</ul>"
+
+    send_response(conn, "200 OK", "text/html; charset=utf-8", html)
+
+
+def handle_post(conn, headers, body):
+    if "application/json" not in headers.get("content-type", ""):
+        send_response(conn, "415 Unsupported Media Type", "text/plain", "Send JSON please")
+        return
+
+    try:
+        data = json.loads(body)
+    except ValueError:
+        answer = json.dumps({"error": "invalid JSON"})
+        send_response(conn, "400 Bad Request", "application/json", answer)
+        return
+
+    answer = json.dumps({"message": "JSON received", "you_sent": data}, ensure_ascii=False)
+    send_response(conn, "200 OK", "application/json; charset=utf-8", answer)
+
+
         
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -93,17 +122,30 @@ server.listen()
 print("Server is running on http://" + HOST + ":" + str(PORT))
 
 
+
 while True:
     conn, addr = server.accept()
-    request = read_request(conn)
-    if request:
-        head, body = request
-        method, path, query, headers = parse_request(head)
+    try:
+        request = read_request(conn)
+        if request:
+            head, body = request
+            method, path, query, headers = parse_request(head)
 
-        print(method, path)
-        print("Query:", query)
-        print("Headers:", headers)
-        print("Body:", body)
+            print(method, path)
+            print("Query:", query)
+            print("Headers:", headers)
+            print("Body:", body)
 
-        serve_file(conn, path)
+            if method == "GET" and path == "/page":
+                page(conn, query)
+            elif method == "GET":
+                serve_file(conn, path)
+            elif method == "POST" and path == "/api":
+                handle_post(conn, headers, body)
+            else:
+                send_response(conn, "405 Method Not Allowed", "text/plain", "Method not allowed")
+    except Exception as error:
+        print("Error:", error)
+        send_response(conn, "400 Bad Request", "text/plain", "Bad request")
+
     conn.close()
